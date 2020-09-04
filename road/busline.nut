@@ -96,11 +96,19 @@ function BusLine::ChangeStationTo(new_station)
 
 function BusLine::BuildVehicles(num)
 {
+	AILog.Info("Building " + num + " vehicles between " + AIStation.GetName(this._station_from.GetStationID()) + " and " + AIStation.GetName(this._station_to.GetStationID()) + " at depot " + this._depot_tile);
 	this.UpdateVehicleList();
 	this._FindEngineID();
+	AILog.Info("Using engine " + this._engine_id);
 	if (this._engine_id == null) return true;
 	local max_speed = AIEngine.GetMaxSpeed(this._engine_id);
-	local max_to_build = min(min(this._station_from.CanAddBusses(num, this._distance, max_speed), this._station_to.CanAddBusses(num, this._distance, max_speed)), num);
+	local max_to_add = min(min(this._station_from.CanAddBusses(num, this._distance, max_speed), this._station_to.CanAddBusses(num, this._distance, max_speed)), num);
+	local maxOnStation = AIController.GetSetting("max_buses_per_station");
+	local builtOnStation = max(AIVehicleList_Station.GetAllVehicles(this._station_from.GetStationID()).Count(), AIVehicleList_Station.GetAllVehicles(this._station_to.GetStationID()).Count());
+
+	local max_to_build = max_to_add + builtOnStation > maxOnStation ? maxOnStation - builtOnStation : max_to_add; 
+
+	AILog.Info("Maximum buses to build: " + max_to_build);
 	if (max_to_build == 0) return true;
 	if (max_to_build < 0) {
 		this._vehicle_list.Valuate(AIVehicle.GetAge);
@@ -118,6 +126,7 @@ function BusLine::BuildVehicles(num)
 	for (local i = 0; i < max_to_build; i++) {
 		local v = AIVehicle.BuildVehicle(this._depot_tile, this._engine_id);
 		if (!AIVehicle.IsValidVehicle(v)) {
+			AILog.Info("Failed to build vehicle:" + v + ". Error: " + AIError.GetLastError());
 			if (AIError.GetLastError() == AIError.ERR_NOT_ENOUGH_CASH) return false;
 			continue;
 		}
@@ -139,6 +148,8 @@ function BusLine::BuildVehicles(num)
 		AIGroup.MoveVehicle(this._group_id, v);
 		AIVehicle.StartStopVehicle(v);
 		this._vehicle_list.AddItem(v, 0);
+
+		AILog.Info("Vehicle " + v + " was built");
 	}
 	return true;
 }
@@ -164,6 +175,7 @@ function BusLine::CheckVehicles()
 		this._station_to.RemoveBusses(1, this._distance, max_speed);
 		build_new = false;
 	}
+
 	this.UpdateVehicleList();
 
 	this._vehicle_list.Valuate(AIVehicle.GetState);
@@ -201,30 +213,6 @@ function BusLine::CheckVehicles()
 		}
 	}
 
-	this._FindEngineID();
-	if (build_new && this._engine_id != null) {
-		local cargo_waiting_a = AIStation.GetCargoWaiting(this._station_from.GetStationID(), this._cargo);
-		local cargo_waiting_b = AIStation.GetCargoWaiting(this._station_to.GetStationID(), this._cargo);
-		local num_new =  0;
-		list = AIList();
-		list.AddList(this._vehicle_list);
-		list.Valuate(AIVehicle.GetAge);
-		list.KeepBelowValue(100);
-		local num_young_vehicles = list.Count();
-		if (max(cargo_waiting_a, cargo_waiting_b) > 100) {
-			num_new = max(cargo_waiting_a, cargo_waiting_b) / 60 - max(0, num_young_vehicles);
-			num_new = min(num_new, 8); // Don't build more than 8 new vehicles a time.
-		}
-		local rating = min(AIStation.GetCargoRating(this._station_from.GetStationID(), this._cargo),
-		                   AIStation.GetCargoRating(this._station_to.GetStationID(), this._cargo));
-		local target_rating = 60;
-		if (AITown.HasStatue(AIStation.GetNearestTown(this._station_from.GetStationID()))) target_rating += 10;
-		local veh_speed = AIEngine.GetMaxSpeed(this._engine_id);
-		if (veh_speed > 85) target_rating += min(17, (veh_speed - 85) / 4);
-		if (rating < target_rating && num_young_vehicles == 0 && num_new == 0) num_new = 1;
-		if (rating < target_rating - 20 && num_young_vehicles + num_new <= 1) num_new++;
-		if (num_new > 0) return !this.BuildVehicles(num_new);
-	}
 	return false;
 }
 

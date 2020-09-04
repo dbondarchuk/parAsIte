@@ -82,15 +82,18 @@ class RouteFinder
 
 function RouteFinder::FindRouteBetweenRects(tile_a, tile_b, radius, ignored_tiles = [])
 {
+	AILog.Info("Looking for routes between " + tile_a + " and " + tile_b + " with radius " + radius)
 	local sources = [];
 	local max_x = AIMap.GetTileX(tile_a) + radius;
 	for (local x = AIMap.GetTileX(tile_a) - radius; x <= max_x; x++) {
 		local max_y = AIMap.GetTileY(tile_a) + radius;
 		for (local y = AIMap.GetTileY(tile_a) - radius; y <= max_y; y++) {
 			local tile = AIMap.GetTileIndex(x, y);
-			if (AIRoad.IsRoadTile(tile)) sources.push([tile, 1]);
+			if (AIRoad.IsRoadTileOfType(tile, AIRoad.ROADTRAMTYPES_ROAD)) sources.push([tile, 1]);
 		}
 	}
+
+	AILog.Info("Found " + sources.len() + " source tiles");
 	if (sources.len() == 0) return null;
 
 	local goals = [];
@@ -99,15 +102,19 @@ function RouteFinder::FindRouteBetweenRects(tile_a, tile_b, radius, ignored_tile
 		local max_y = AIMap.GetTileY(tile_b) + radius;
 		for (local y = AIMap.GetTileY(tile_b) - radius; y <= max_y; y++) {
 			local tile = AIMap.GetTileIndex(x, y);
-			if (AIRoad.IsRoadTile(tile)) goals.push(tile);
+			if (AIRoad.IsRoadTileOfType(tile, AIRoad.ROADTRAMTYPES_ROAD)) goals.push(tile);
 		}
 	}
+
+	AILog.Info("Found " + goals.len() + " goal tiles");
 	if (goals.len() == 0) return null;
 
 	_RouteFinder_pf.InitializePath(sources, goals, ignored_tiles);
 	RouteFinder.max_cost <- 20 + (AIMap.DistanceManhattan(tile_a, tile_b) * 1.2).tointeger();
 	RouteFinder.goal_tile <- tile_b;
 	local path = _RouteFinder_pf.FindPath(-1);
+	AILog.Info("Found path:" + (path != null));
+
 	if (path == null) return null;
 
 	local end_tile = path.GetTile();
@@ -153,7 +160,7 @@ function RouteFinder::_Neighbours(path, cur_tile, callback_param)
 	local offsets = [AIMap.GetTileIndex(0, 1), AIMap.GetTileIndex(0, -1),
 	                 AIMap.GetTileIndex(1, 0), AIMap.GetTileIndex(-1, 0)];
 	foreach (offset in offsets) {
-		if (AIRoad.AreRoadTilesConnected(cur_tile, cur_tile + offset)) tiles.push([cur_tile + offset, 1]);
+		if (AIRoad.AreRoadTilesConnectedByRoadTramType(cur_tile, cur_tile + offset, AIRoad.ROADTRAMTYPES_ROAD)) tiles.push([cur_tile + offset, 1]);
 	}
 	return tiles;
 }

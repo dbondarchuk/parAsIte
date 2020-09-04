@@ -52,7 +52,7 @@ class RoadLine
 		this._depot_tile = depot_tile;
 		this._cargo = cargo;
 		this._support_articulated = support_articulated;
-		this._road_type = road_type == null ? AIRoad.GetCurrentRoadType() : road_type;
+		this._road_type = road_type == null ? AIRoad.ROADTRAMTYPES_ROAD : road_type;
 		if (create_group) {
 			this._group_id = AIGroup.CreateGroup(AIVehicle.VT_ROAD);
 			this.RenameGroup();
@@ -109,7 +109,7 @@ function RoadLine::_FindEngineID()
 {
 	this.UpdateVehicleList();
 	local list = AIEngineList(AIVehicle.VT_ROAD);
-	list.Valuate(AIEngine.GetRoadType);
+	list.Valuate(AIEngine.GetRoadTramType);
 	list.KeepValue(this._road_type);
 	if (!this._support_articulated) {
 		list.Valuate(AIEngine.IsArticulated);

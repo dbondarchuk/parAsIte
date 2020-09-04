@@ -243,7 +243,7 @@ function RPF::_Cost(path, new_tile, new_direction, self)
 		cost += self._cost_slope;
 	}
 
-	if (!AIRoad.IsRoadTile(new_tile)) {
+	if (!AIRoad.IsRoadTileOfType(new_tile, AIRoad.ROADTRAMTYPES_ROAD)) {
 		cost += self._cost_no_existing_road;
 		local closest_town = null;
 		local closest_distance = self._town_distance;
@@ -279,7 +279,7 @@ function RPF::_Neighbours(path, cur_node, self)
 	     AITile.HasTransportType(cur_node, AITile.TRANSPORT_ROAD)) {
 		local other_end = AIBridge.IsBridgeTile(cur_node) ? AIBridge.GetOtherBridgeEnd(cur_node) : AITunnel.GetOtherTunnelEnd(cur_node);
 		local next_tile = cur_node + (cur_node - other_end) / AIMap.DistanceManhattan(cur_node, other_end);
-		if (AIRoad.AreRoadTilesConnected(cur_node, next_tile) || AITile.IsBuildable(next_tile) || AIRoad.IsRoadTile(next_tile)) {
+		if (AIRoad.AreRoadTilesConnectedByRoadTramType(cur_node, next_tile, AIRoad.ROADTRAMTYPES_ROAD)) {
 			tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
 		}
 		/* The other end of the bridge / tunnel is a neighbour. */
@@ -287,7 +287,7 @@ function RPF::_Neighbours(path, cur_node, self)
 	} else if (path.GetParent() != null && AIMap.DistanceManhattan(cur_node, path.GetParent().GetTile()) > 1) {
 		local other_end = path.GetParent().GetTile();
 		local next_tile = cur_node + (cur_node - other_end) / AIMap.DistanceManhattan(cur_node, other_end);
-		if (AIRoad.AreRoadTilesConnected(cur_node, next_tile) || AIRoad.BuildRoad(cur_node, next_tile)) {
+		if (AIRoad.AreRoadTilesConnectedByRoadTramType(cur_node, next_tile, AIRoad.ROADTRAMTYPES_ROAD)) {
 			tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
 		}
 	} else {
@@ -298,22 +298,11 @@ function RPF::_Neighbours(path, cur_node, self)
 			local next_tile = cur_node + offset;
 			/* We add them to the to the neighbours-list if one of the following applies:
 			 * 1) There already is a connections between the current tile and the next tile.
-			 * 2) We can build a road to the next tile.
-			 * 3) The next tile is the entrance of a tunnel / bridge in the correct direction. */
-			if (AIRoad.AreRoadTilesConnected(cur_node, next_tile)) {
+			 * 2) The next tile is the entrance of a tunnel / bridge in the correct direction. */
+			if (AIRoad.AreRoadTilesConnectedByRoadTramType(cur_node, next_tile, AIRoad.ROADTRAMTYPES_ROAD)) {
 				tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
-			} else if ((AITile.IsBuildable(next_tile) || AIRoad.IsRoadTile(next_tile)) &&
-					(path.GetParent() == null || AIRoad.CanBuildConnectedRoadPartsHere(cur_node, path.GetParent().GetTile(), next_tile)) &&
-					AIRoad.BuildRoad(cur_node, next_tile)) {
+			}  else if (self._CheckTunnelBridge(cur_node, next_tile)) {
 				tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
-			} else if (self._CheckTunnelBridge(cur_node, next_tile)) {
-				tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
-			}
-		}
-		if (path.GetParent() != null) {
-			local bridges = self._GetTunnelsBridges(path.GetParent().GetTile(), cur_node, self._GetDirection(path.GetParent().GetTile(), cur_node, true) << 4);
-			foreach (tile in bridges) {
-				tiles.push(tile);
 			}
 		}
 	}
@@ -332,40 +321,6 @@ function RPF::_GetDirection(from, to, is_bridge)
 	if (from - to == -1) return 2;
 	if (from - to == AIMap.GetMapSizeX()) return 4;
 	if (from - to == -AIMap.GetMapSizeX()) return 8;
-}
-
-/**
- * Get a list of all bridges and tunnels that can be build from the
- * current tile. Bridges will only be build starting on non-flat tiles
- * for performance reasons. Tunnels will only be build if no terraforming
- * is needed on both ends.
- */
-function RPF::_GetTunnelsBridges(last_node, cur_node, bridge_dir)
-{
-	local slope = AITile.GetSlope(cur_node);
-	local next_tile = cur_node + (cur_node - last_node);
-	if (slope == AITile.SLOPE_FLAT && !AITile.HasTransportType(next_tile, AITile.TRANSPORT_RAIL) && !AITile.HasTransportType(next_tile, AITile.TRANSPORT_WATER)) return [];
-	local tiles = [];
-
-	for (local i = 2; i < this._max_bridge_length; i++) {
-		local bridge_list = AIBridgeList_Length(i + 1);
-		local target = cur_node + i * (cur_node - last_node);
-		if (!bridge_list.IsEmpty() && AIBridge.BuildBridge(AIVehicle.VT_ROAD, bridge_list.Begin(), cur_node, target)) {
-			tiles.push([target, bridge_dir]);
-		}
-	}
-
-	if (slope != AITile.SLOPE_SW && slope != AITile.SLOPE_NW && slope != AITile.SLOPE_SE && slope != AITile.SLOPE_NE) return tiles;
-	local other_tunnel_end = AITunnel.GetOtherTunnelEnd(cur_node);
-	if (!AIMap.IsValidTile(other_tunnel_end)) return tiles;
-
-	local tunnel_length = AIMap.DistanceManhattan(cur_node, other_tunnel_end);
-	local prev_tile = cur_node + (cur_node - other_tunnel_end) / tunnel_length;
-	if (AITunnel.GetOtherTunnelEnd(other_tunnel_end) == cur_node && tunnel_length >= 2 &&
-			prev_tile == last_node && tunnel_length < _max_tunnel_length && AITunnel.BuildTunnel(AIVehicle.VT_ROAD, cur_node)) {
-		tiles.push([other_tunnel_end, bridge_dir]);
-	}
-	return tiles;
 }
 
 function RPF::_IsSlopedRoad(start, middle, end)

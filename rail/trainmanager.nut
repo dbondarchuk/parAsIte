@@ -614,7 +614,7 @@ function TrainManager::_GetStationNearIndustry(ind, producing, cargo, other_ind)
 				if (!Utils_Tile.FlattenLandForStation(tile, platform_length + 2, 2, h, true, false)) continue;
 			}
 			/* If the town rating is too low and we can't fix it, return. */
-			if (!::main_instance._town_managers[AITile.GetClosestTown(tile)].ImproveTownRating(AITown.TOWN_RATING_POOR)) return null;
+			//if (!::main_instance._town_managers[AITile.GetClosestTown(tile)].ImproveTownRating(AITown.TOWN_RATING_POOR)) return null;
 			if (AIRail.BuildNewGRFRailStation(tile, trackdir, 2, platform_length + 2, AIStation.STATION_NEW, cargo, ind_types[0], ind_types[1], distance, producing)) {
 				local manager = StationManager(AIStation.GetStationID(tile));
 				manager.SetCargoDrop(!producing);

@@ -160,7 +160,7 @@ function TruckLine::BuildVehicles(num)
 		if (this._vehicle_list.Count() > 0) {
 			AIOrder.ShareOrders(v, this._vehicle_list.Begin());
 		} else {
-			AIOrder.AppendOrder(v, AIStation.GetLocation(this._station_from.GetStationID()), AIOrder.AIOF_FULL_LOAD_ANY | AIOrder.AIOF_NON_STOP_INTERMEDIATE);
+			AIOrder.AppendOrder(v, AIStation.GetLocation(this._station_from.GetStationID()), AIOrder.AIOF_NON_STOP_INTERMEDIATE);
 			AIOrder.AppendOrder(v, this._depot_tile, AIOrder.AIOF_SERVICE_IF_NEEDED | AIOrder.AIOF_NON_STOP_INTERMEDIATE);
 			AIOrder.AppendOrder(v, AIStation.GetLocation(this._station_to.GetStationID()), AIOrder.AIOF_UNLOAD | AIOrder.AIOF_NO_LOAD | AIOrder.AIOF_NON_STOP_INTERMEDIATE);
 			AIOrder.AppendOrder(v, this._depot_tile, AIOrder.AIOF_SERVICE_IF_NEEDED | AIOrder.AIOF_NON_STOP_INTERMEDIATE);
@@ -225,38 +225,6 @@ function TruckLine::CheckVehicles()
 		if (AIVehicle.GetState(v) == AIVehicle.VS_STOPPED) AIVehicle.StartStopVehicle(v);
 	}
 
-	/* Only build new vehicles if we didn't sell any. */
-	this._FindEngineID();
-	if (list.Count() == 0 && this._engine_id != null) {
-		local cargo_waiting = AIStation.GetCargoWaiting(this._station_from.GetStationID(), this._cargo);
-		local num_new =  0;
-		list = AIList();
-		list.AddList(this._vehicle_list);
-		list.Valuate(AIVehicle.GetAge);
-		list.KeepBelowValue(250);
-		local num_young_vehicles = list.Count();
-		local cargo_per_truck = this._vehicle_list.Count() > 0 ? AIVehicle.GetCapacity(this._vehicle_list.Begin(), this._cargo) : AIEngine.GetCapacity(this._engine_id);
-		if (cargo_per_truck == 0) throw("Cargo_per_truck = 0. Engine: " + AIEngine.GetName(this._engine_id) + " ("+this._engine_id+"), veh engine = " +AIEngine.GetName(AIVehicle.GetEngineType(this._vehicle_list.Begin())) + " ("+this._vehicle_list.Begin()+")");
-		if (cargo_waiting > 60 && cargo_waiting > 3 * cargo_per_truck) {
-			num_new = (cargo_waiting / cargo_per_truck + 1) / 2- max(0, num_young_vehicles);
-			num_new = min(num_new, 8); // Don't build more than 8 new vehicles a time.
-		}
-		local target_rating = 64;
-		if (AITown.HasStatue(AIStation.GetNearestTown(this._station_from.GetStationID()))) target_rating += 10;
-		local veh_speed = AIEngine.GetMaxSpeed(this._engine_id);
-		if (veh_speed > 85) target_rating += min(17, (veh_speed - 85) / 4);
-		if (AIStation.GetCargoRating(this._station_from.GetStationID(), this._cargo) < target_rating && num_young_vehicles == 0 && num_new == 0) num_new = 1;
-		if (this._vehicle_list.Count() == 0) num_new = max(num_new, 2);
-
-		list = AIList();
-		list.AddList(this._vehicle_list);
-		list.Valuate(AIVehicle.GetState);
-		list.KeepValue(AIVehicle.VS_RUNNING);
-		list.Valuate(AIVehicle.GetCurrentSpeed);
-		list.KeepBelowValue(10);
-		if (num_new > 0 && list.Count() <= this._vehicle_list.Count() / 3) return !this.BuildVehicles(num_new);
-	}
-	/* We didn't build any new vehicles, so we don't need more money. */
 	return false;
 }
 

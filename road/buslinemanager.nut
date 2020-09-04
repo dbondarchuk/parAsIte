@@ -39,7 +39,7 @@ class BusLineManager
 	constructor()
 	{
 		this._routes = [];
-		this._max_distance_existing_route = 100;
+		this._max_distance_existing_route = 250;
 		this._skip_from = 0;
 		this._skip_to = 0;
 		this._max_distance_new_line = 60;
@@ -53,26 +53,12 @@ class BusLineManager
 	function NewLineExistingRoad();
 
 	/**
-	 * Build a new passenger route, we don't care if it's over existing road or not.
-	 * @return True if and only if a route was succesfully build.
-	 */
-	function BuildNewLine();
-
-	/**
 	 * Check all build routes to see if they have the correct amount of busses.
 	 * @return True if and only if we need more money to complete the function.
 	 */
 	function CheckRoutes();
 
 /* private: */
-
-	/**
-	 * Build a depot in a given town, close to a station.
-	 * @param town_manager A TownManager that is responsible for the town.
-	 * @param station_manager The StationManager responsible for the station we
-	 *  want a depot nearby.
-	 */
-	function _BuildDepot(town_manager, station_manager);
 
 	/**
 	 * Try to find two towns that are already connected by road.
@@ -107,13 +93,15 @@ function BusLineManager::AfterLoad()
 	local st_to = {};
 	foreach (v, dummy in vehicle_list) {
 		if (AIOrder.GetOrderCount(v) != 3) {
+			AILog.Info("Selling vehicle " + v + " due to wrong order count.");
 			::main_instance.sell_vehicles.AddItem(v, 0);
 			continue;
 		}
-		if (AIRoad.IsRoadDepotTile(AIOrder.GetOrderDestination(v, 0))) AIOrder.MoveOrder(v, 0, 2);
-		if (!AIRoad.IsRoadStationTile(AIOrder.GetOrderDestination(v, 0)) ||
-				!AIRoad.IsRoadStationTile(AIOrder.GetOrderDestination(v, 1)) ||
-				!AIRoad.IsRoadDepotTile(AIOrder.GetOrderDestination(v, 2))) {
+		if (AIRoad.IsRoadDepotTileOfType(AIOrder.GetOrderDestination(v, 0), AIRoad.ROADTRAMTYPES_ROAD)) AIOrder.MoveOrder(v, 0, 2);
+		if (!AIRoad.IsRoadStationTileOfType(AIOrder.GetOrderDestination(v, 0), AIRoad.ROADTRAMTYPES_ROAD) ||
+				!AIRoad.IsRoadStationTileOfType(AIOrder.GetOrderDestination(v, 1), AIRoad.ROADTRAMTYPES_ROAD) ||
+				!AIRoad.IsRoadDepotTileOfType(AIOrder.GetOrderDestination(v, 2), AIRoad.ROADTRAMTYPES_ROAD)) {
+			AILog.Info("Selling vehicle " + v + " due to wrong order.");
 			::main_instance.sell_vehicles.AddItem(v, 0);
 			continue;
 		}
@@ -127,22 +115,20 @@ function BusLineManager::AfterLoad()
 				station_from.AddBusses(1, AIMap.DistanceManhattan(AIStation.GetLocation(station_from.GetStationID()), AIStation.GetLocation(station_to.GetStationID())), AIEngine.GetMaxSpeed(AIVehicle.GetEngineType(v)));
 				station_to.AddBusses(1, AIMap.DistanceManhattan(AIStation.GetLocation(station_from.GetStationID()), AIStation.GetLocation(station_to.GetStationID())), AIEngine.GetMaxSpeed(AIVehicle.GetEngineType(v)));
 			} else {
+				AILog.Info("Selling vehicle " + v + " due to stations 1.");
 				::main_instance.sell_vehicles.AddItem(v, 0);
 				continue;
 			}
 		} else {
-			if (st_to.rawin(station_b) || st_to.rawin(station_b) || st_from.rawin(station_b)) {
-				::main_instance.sell_vehicles.AddItem(v, 0);
-				continue;
-			}
 			/* New BusLine from station_a to station_b. */
 			local station_manager_a = StationManager(station_a);
 			local station_manager_b = StationManager(station_b);
-			local depot_list = AIDepotList(AITile.TRANSPORT_ROAD);
+			local depot_list = AIDepotList.GetAllDepots(AITile.TRANSPORT_ROAD);
 			depot_list.Valuate(AIMap.DistanceManhattan, AIStation.GetLocation(station_a));
 			depot_list.Sort(AIAbstractList.SORT_BY_VALUE, AIAbstractList.SORT_ASCENDING);
 			local depot_tile = depot_list.Begin();
-			local articulated = station_manager_a.HasArticulatedBusStop() && station_manager_b.HasArticulatedBusStop();
+			//local articulated = station_manager_a.HasArticulatedBusStop() && station_manager_b.HasArticulatedBusStop();
+			local articulated = false; // Don't want articulated buses
 			local line = BusLine(station_manager_a, station_manager_b, depot_tile, ::main_instance._passenger_cargo_id, articulated);
 			this._routes.push(line);
 			st_from.rawset(station_a, line);
@@ -205,156 +191,22 @@ function BusLineManager::ImproveLines()
 	}
 }
 
-function BusLineManager::BuildNewLine()
-{
-	local engine_list = AIEngineList(AIVehicle.VT_ROAD);
-	engine_list.Valuate(AIEngine.GetRoadType);
-	engine_list.KeepValue(AIRoad.GetCurrentRoadType());
-	engine_list.Valuate(AIEngine.CanRefitCargo, ::main_instance._passenger_cargo_id);
-	engine_list.KeepValue(1);
-	if (engine_list.Count() == 0) return;
-	/* If there are only articulated vehicles available we must build a dtrs. */
-	engine_list.Valuate(AIEngine.IsArticulated);
-	engine_list.KeepValue(0);
-	local force_dtrs = engine_list.Count() == 0;
-
-	local subsidies = AISubsidyList();
-	/* Only non-awarded subsidies are taken into consideration. */
-	subsidies.Valuate(AISubsidy.IsAwarded);
-	subsidies.KeepValue(0);
-	/* We only want passengers subsidies from town to town. */
-	subsidies.Valuate(AISubsidy.GetCargoType);
-	subsidies.KeepValue(::main_instance._passenger_cargo_id);
-	subsidies.Valuate(AISubsidy.GetSourceType);
-	subsidies.KeepValue(AISubsidy.SPT_TOWN);
-	subsidies.Valuate(AISubsidy.GetDestinationType);
-	subsidies.KeepValue(AISubsidy.SPT_TOWN);
-	/* We need at least 6 months or the subsidy might already be expired
-	 * before we are done building the route. */
-	subsidies.Valuate(AISubsidy.GetExpireDate);
-	subsidies.KeepAboveValue(AIDate.GetCurrentDate() + 180);
-	/* Finally we have a list of usaable subsidies. */
-	foreach (subsidy, dummy in subsidies) {
-		local town_from = AISubsidy.GetSourceIndex(subsidy);
-		local town_to = AISubsidy.GetDestinationIndex(subsidy);
-		local manager = ::main_instance._town_managers[town_from];
-		local manager2 = ::main_instance._town_managers[town_to];
-		if (!manager.CanGetStation() || !manager2.CanGetStation()) continue;
-		local array_from = [AITown.GetLocation(town_from)];
-		local array_to = [AITown.GetLocation(town_to)];
-		AILog.Info("Trying subsidy pax route between: " + AITown.GetName(town_from) + " and " + AITown.GetName(town_to));
-		local station_from = manager.GetStation(force_dtrs);
-		if (station_from == null) {AILog.Warning("Couldn't build first station"); break;}
-		local station_to = manager2.GetStation(force_dtrs);
-		if (station_to == null) {AILog.Warning("Couldn't build second station"); continue; }
-		local ret = RouteBuilder.BuildRoadRoute(RPF([town_from, town_to]), array_from, array_to, 1.2, 20);
-		if (ret != 0) continue;
-		local route = RouteFinder.FindRouteBetweenRects(AITown.GetLocation(town_from), AITown.GetLocation(town_to), 3);
-		local route2 = RouteFinder.FindRouteBetweenRects(AITown.GetLocation(town_to), AITown.GetLocation(town_from), 3);
-		if (route == null) { AILog.Warning("The route we just build could not be found"); continue; }
-		if (route2 == null) {
-			local ret = RouteBuilder.BuildRoadRoute(RPF([town_from, town_to]), array_to, array_from, 1.2, 20);
-			if (ret != 0) continue;
-			route2 = RouteFinder.FindRouteBetweenRects(AITown.GetLocation(town_to), AITown.GetLocation(town_from), 3);
-			if (route2 == null) { AILog.Warning("The route2 we just build could not be found"); continue; }
-		}
-		AILog.Info("Build passenger route between: " + AITown.GetName(town_from) + " and " + AITown.GetName(town_to));
-		local ret1 = RouteBuilder.BuildRoadRouteFromStation(station_from.GetStationID(), AIStation.STATION_BUS_STOP, [route[0]]);
-		local ret2 = RouteBuilder.BuildRoadRouteFromStation(station_to.GetStationID(), AIStation.STATION_BUS_STOP, [route[1]]);
-		if (ret1 == 0 && ret2 == 0) {
-			AILog.Info("Route ok");
-			manager.UseStation(station_from);
-			::main_instance._town_managers.rawget(town_to).UseStation(station_to);
-			local depot_tile = manager.GetDepot(station_from);
-			if (depot_tile == null) depot_tile = ::main_instance._town_managers.rawget(town_to).GetDepot(station_to);
-			if (depot_tile == null) break;
-			local articulated = station_from.HasArticulatedBusStop() && station_to.HasArticulatedBusStop();
-			local line = BusLine(station_from, station_to, depot_tile, ::main_instance._passenger_cargo_id, false, articulated);
-			this._routes.push(line);
-			return true;
-		}
-	}
-
-	foreach (town_from, manager in ::main_instance._town_managers) {
-		if (!manager.CanGetStation()) continue;
-		if (AITown.GetPopulation(town_from) < 150) continue;
-		local townlist = AITownList();
-		townlist.Valuate(Utils_Valuator.ItemValuator);
-		townlist.KeepAboveValue(town_from);
-		townlist.Valuate(AITown.GetDistanceManhattanToTile, AITown.GetLocation(town_from));
-		townlist.KeepBetweenValue(50, this._max_distance_new_line);
-		townlist.Sort(AIAbstractList.SORT_BY_VALUE, AIAbstractList.SORT_DESCENDING);
-		foreach (town_to, dummy in townlist) {
-			local manager2 = ::main_instance._town_managers[town_to];
-			if (!manager2.CanGetStation()) continue;
-			if (AITown.GetPopulation(town_to) < 150) continue;
-			local list_from = AITileList();
-			Utils_Tile.AddSquare(list_from, AITown.GetLocation(town_from), 0);
-			local list_to = AITileList();
-			Utils_Tile.AddSquare(list_to, AITown.GetLocation(town_to), 0);
-			local array_from = [];
-			foreach (tile, d in list_from) array_from.push(tile);
-			local array_to = [];
-			foreach (tile, d in list_to) array_to.push(tile);
-			AILog.Info("Trying pax route between: " + AITown.GetName(town_from) + " and " + AITown.GetName(town_to));
-			local station_from = manager.GetStation(force_dtrs);
-			if (station_from == null) {AILog.Warning("Couldn't build first station"); break;}
-			local station_to = manager2.GetStation(force_dtrs);
-			if (station_to == null) {AILog.Warning("Couldn't build second station"); continue; }
-			local ret = RouteBuilder.BuildRoadRoute(RPF([town_from, town_to]), array_from, array_to, 1.2, 20);
-			if (ret != 0) continue;
-			local route = RouteFinder.FindRouteBetweenRects(AITown.GetLocation(town_from), AITown.GetLocation(town_to), 3);
-			local route2 = RouteFinder.FindRouteBetweenRects(AITown.GetLocation(town_to), AITown.GetLocation(town_from), 3);
-			if (route == null) { AILog.Warning("The route we just build could not be found"); continue; }
-			if (route2 == null) {
-				local ret = RouteBuilder.BuildRoadRoute(RPF([town_from, town_to]), array_to, array_from, 1.2, 20);
-				if (ret != 0) continue;
-				route2 = RouteFinder.FindRouteBetweenRects(AITown.GetLocation(town_to), AITown.GetLocation(town_from), 3);
-				if (route2 == null) { AILog.Warning("The route2 we just build could not be found"); continue; }
-			}
-			AILog.Info("Build passenger route between: " + AITown.GetName(town_from) + " and " + AITown.GetName(town_to));
-			local ret1 = RouteBuilder.BuildRoadRouteFromStation(station_from.GetStationID(), AIStation.STATION_BUS_STOP, [route[0]]);
-			local ret2 = RouteBuilder.BuildRoadRouteFromStation(station_to.GetStationID(), AIStation.STATION_BUS_STOP, [route[1]]);
-			if (ret1 == 0 && ret2 == 0) {
-				AILog.Info("Route ok");
-				manager.UseStation(station_from);
-				::main_instance._town_managers.rawget(town_to).UseStation(station_to);
-				local depot_tile = manager.GetDepot(station_from);
-				if (depot_tile == null) depot_tile = ::main_instance._town_managers.rawget(town_to).GetDepot(station_to);
-				if (depot_tile == null) break;
-				local articulated = station_from.HasArticulatedBusStop() && station_to.HasArticulatedBusStop();
-				local line = BusLine(station_from, station_to, depot_tile, ::main_instance._passenger_cargo_id, false, articulated);
-				this._routes.push(line);
-				::main_instance.BuildHQ(station_to.GetStationID(), 1, 1);
-				::main_instance.BuildHQ(station_from.GetStationID(), 1, 1);
-				return true;
-			}
-		}
-	}
-	this._max_distance_new_line = min(300, this._max_distance_new_line + 30);
-	return false;
-}
-
 function BusLineManager::NewLineExistingRoad()
 {
-	if (AIDate.GetCurrentDate() - this._last_search_finished < 10) return false;
+	//if (AIDate.GetCurrentDate() - this._last_search_finished < 10) return false;
 	return this._NewLineExistingRoadGenerator(200);
-}
-
-function BusLineManager::_BuildDepot(town_manager, station_manager)
-{
-	return town_manager.GetDepot(station_manager);
 }
 
 function BusLineManager::_NewLineExistingRoadGenerator(num_routes_to_check)
 {
 	local engine_list = AIEngineList(AIVehicle.VT_ROAD);
-	engine_list.Valuate(AIEngine.GetRoadType);
-	engine_list.KeepValue(AIRoad.GetCurrentRoadType());
+	engine_list.Valuate(AIEngine.GetRoadTramType);
+	engine_list.KeepValue(AIRoad.ROADTRAMTYPES_ROAD);
 	engine_list.Valuate(AIEngine.CanRefitCargo, ::main_instance._passenger_cargo_id);
 	engine_list.KeepValue(1);
+	AILog.Info("Found " + engine_list.Count() + " engines.");
 	if (engine_list.Count() == 0) return;
-	/* If there are only articulated vehicles available we must build a dtrs. */
+
 	engine_list.Valuate(AIEngine.IsArticulated);
 	engine_list.KeepValue(0);
 	local force_dtrs = engine_list.Count() == 0;
@@ -362,12 +214,27 @@ function BusLineManager::_NewLineExistingRoadGenerator(num_routes_to_check)
 	local current_routes = -1;
 	local town_from_skipped = 0, town_to_skipped = 0;
 	local do_skip = true;
-	foreach (town, manager in ::main_instance._town_managers) {
+	local towns = [];
+	foreach (town, dummy in ::main_instance._town_managers) {
+		towns.push(town);
+	}
+
+	towns = Utils_Array.RandomReorder(towns)
+	foreach (town in towns) {
+		local manager = ::main_instance._town_managers[town];
 		if (town_from_skipped < this._skip_from && do_skip) {
 			town_from_skipped++;
 			continue;
 		}
-		if (!manager.CanGetStation()) continue;
+
+		AILog.Info("Checking town " + AITown.GetName(town) + " for stops.");
+		if (!manager.CanGetStation()) {
+			AILog.Info("No stops were found in " + AITown.GetName(town));
+			continue;
+		}
+
+		AILog.Info("Stop found.");
+
 		local townlist = AITownList();
 		townlist.Valuate(Utils_Valuator.ItemValuator);
 		townlist.KeepAboveValue(town);
@@ -379,41 +246,79 @@ function BusLineManager::_NewLineExistingRoadGenerator(num_routes_to_check)
 				town_to_skipped++;
 				continue;
 			}
+			
 			do_skip = false;
 			this._skip_to++;
 			local manager2 = ::main_instance._town_managers[town_to];
-			if (!manager2.CanGetStation()) continue;
+			AILog.Info("  Checking second town " + AITown.GetName(town) + " for stops.");
+			if (!manager2.CanGetStation()) {
+				AILog.Info("  No stops were found in second town of " + AITown.GetName(town));
+				continue;
+			}
+
+			AILog.Info("  Found stop in second town.");
+
 			current_routes++;
 			if (current_routes == num_routes_to_check) {
+				AILog.Info("We maxed out retires for finding routes.")
 				return false;
 			}
+
+			AILog.Info("Looking for a route between: " + AITown.GetName(town) + " and " + AITown.GetName(town_to));
 			local route = RouteFinder.FindRouteBetweenRects(AITown.GetLocation(town), AITown.GetLocation(town_to), 3);
-			if (route == null) continue;
-			AILog.Info("Found passenger route between: " + AITown.GetName(town) + " and " + AITown.GetName(town_to));
-			local station_from = manager.GetStation(force_dtrs);
-			if (station_from == null) {AILog.Warning("Couldn't build first station"); break;}
-			local station_to = manager2.GetStation(force_dtrs);
-			if (station_to == null) {AILog.Warning("Couldn't build second station"); continue; }
-			local ret1 = RouteBuilder.BuildRoadRouteFromStation(station_from.GetStationID(), AIStation.STATION_BUS_STOP, [route[0]]);
-			local ret2 = RouteBuilder.BuildRoadRouteFromStation(station_to.GetStationID(), AIStation.STATION_BUS_STOP, [route[1]]);
-			if (ret1 == 0 && ret2 == 0) {
-				AILog.Info("Route ok");
-				manager.UseStation(station_from);
-				::main_instance._town_managers.rawget(town_to).UseStation(station_to);
-				local depot_tile = manager.GetDepot(station_from);
-				if (depot_tile == null) depot_tile = ::main_instance._town_managers.rawget(town_to).GetDepot(station_to);
-				if (depot_tile == null) break;
-				local articulated = station_from.HasArticulatedBusStop() && station_to.HasArticulatedBusStop();
-				local line = BusLine(station_from, station_to, depot_tile, ::main_instance._passenger_cargo_id, false, articulated);
-				this._routes.push(line);
-				this._skip_to = 0;
-				return true;
+			if (route == null) {
+				AILog.Info("No routes were found between: " + AITown.GetName(town) + " and " + AITown.GetName(town_to));	
+				continue;
 			}
+
+			AILog.Info("Found passenger route between: " + AITown.GetName(town) + " and " + AITown.GetName(town_to));
+			local maxOnStation = AIController.GetSetting("max_buses_per_station");
+			AILog.Info("Max on station: " + maxOnStation);
+
+			local station_from = manager.GetStation();
+			if (station_from == null) {AILog.Warning("Couldn't get first station"); break;}
+
+			local onFromStation = AIVehicleList_Station.GetAllVehicles(station_from.GetStationID()).Count();
+			AILog.Info("On from station: " + onFromStation);
+			if (onFromStation >= maxOnStation){
+				AILog.Info("Enough vehicles on station " + AIStation.GetName(station_from.GetStationID()));
+				break;
+			}
+
+			local station_to = manager2.GetStation();
+			if (station_to == null) {AILog.Warning("Couldn't get second station"); continue; }
+			local onToStation = AIVehicleList_Station.GetAllVehicles(station_to.GetStationID()).Count();
+			
+			AILog.Info("On to station: " + onToStation);
+			if (onToStation >= maxOnStation){
+				AILog.Info("Enough vehicles on station " + AIStation.GetName(station_to.GetStationID()));
+				break;
+			}
+			AILog.Info("Route ok");
+			manager.UseStation(station_from);
+			::main_instance._town_managers.rawget(town_to).UseStation(station_to);
+			local depot_tile = manager.GetDepot();
+			if (depot_tile == null) depot_tile = ::main_instance._town_managers.rawget(town_to).GetDepot();
+			if (depot_tile == null) break;
+			//local articulated = station_from.HasArticulatedBusStop() && station_to.HasArticulatedBusStop();
+			local articulated = false; // Don't want articulated buses
+
+			local line = BusLine(station_from, station_to, depot_tile, ::main_instance._passenger_cargo_id, false, articulated);
+			this._routes.push(line);
+			this._skip_to = 0;
+			return true;
 		}
+
 		this._skip_to = 0;
 		this._skip_from++;
 		do_skip = false;
 	}
+
+	foreach (town, manager in ::main_instance._town_managers) {
+		AILog.Info("Scanning town " + AITown.GetName(town));
+		manager.ScanMap();
+	}
+
 	AILog.Info("Full town search done!");
 	this._max_distance_existing_route = min(300, this._max_distance_existing_route + 50);
 	this._skip_to = 0;

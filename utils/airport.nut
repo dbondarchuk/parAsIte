@@ -45,8 +45,9 @@ function Utils_Airport::IsSmallAirport(station_id)
 {
 	assert(AIStation.HasStationType(station_id, AIStation.STATION_AIRPORT));
 
-	local type = AIAirport.GetAirportType(AIStation.GetLocation(station_id));
-	return type == AIAirport.AT_SMALL || type == AIAirport.AT_COMMUTER;
+	local hasShortStrip = AIAirport.HasShortStrip(AIStation.GetLocation(station_id));
+	AILog.Info(AIStation.GetName(station_id) + " airport has short strip: " + hasShortStrip);
+	return hasShortStrip;
 }
 
 function Utils_Airport::IsHeliport(station_id)
