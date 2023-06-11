@@ -183,6 +183,7 @@ function TruckLine::CheckVehicles()
 		return false;
 	}
 
+	this.UpdateVehicleList();
 	local list = AIList();
 	list.AddList(this._vehicle_list);
 	list.Valuate(AIVehicle.GetAge);

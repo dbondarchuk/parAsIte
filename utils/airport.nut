@@ -54,6 +54,16 @@ function Utils_Airport::IsHeliport(station_id)
 {
 	assert(AIStation.HasStationType(station_id, AIStation.STATION_AIRPORT));
 
-	local type = AIAirport.GetAirportType(AIStation.GetLocation(station_id));
-	return type == AIAirport.AT_HELIPORT || type == AIAirport.AT_HELISTATION || type == AIAirport.AT_HELIDEPOT;
+	//local type = AIAirport.GetAirportType(AIStation.GetLocation(station_id));
+	//return type == AIAirport.AT_HELIPORT || type == AIAirport.AT_HELISTATION || type == AIAirport.AT_HELIDEPOT;
+
+	return AIAirport.OnlyHelicopters(AIStation.GetLocation(station_id));
 }
+
+function Utils_Airport::HasHangars(station_id)
+{
+	assert(AIStation.HasStationType(station_id, AIStation.STATION_AIRPORT));
+
+	return AIAirport.GetNumHangars(AIStation.GetLocation(station_id)) > 0;
+}
+

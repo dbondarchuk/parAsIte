@@ -269,6 +269,31 @@ function TruckLineManager::CheckRoutes() {
     foreach(route in this._routes) {
         if (route.CheckVehicles()) need_money = true;
     }
+
+	local invalid_veh_list = AIVehicleList();
+    invalid_veh_list.Valuate(AIVehicle.GetVehicleType);
+    invalid_veh_list.KeepValue(AIVehicle.VT_ROAD);
+    invalid_veh_list.Valuate(AIVehicle.HasInvalidOrders);
+    invalid_veh_list.KeepValue(1);
+
+	if (invalid_veh_list.Count() > 0) {
+		::main_instance.sell_vehicles.AddList(invalid_veh_list);
+        ::main_instance.SendVehicleToSellToDepot();
+	}
+
+	local unprofitable_vehicles = AIVehicleList();
+    unprofitable_vehicles.Valuate(AIVehicle.GetVehicleType);
+    unprofitable_vehicles.KeepValue(AIVehicle.VT_ROAD);
+    unprofitable_vehicles.Valuate(AIVehicle.GetProfitThisYear);
+    unprofitable_vehicles.KeepBelowValue(0);
+    unprofitable_vehicles.Valuate(AIVehicle.GetProfitLastYear);
+    unprofitable_vehicles.KeepBelowValue(0);
+
+	if (unprofitable_vehicles.Count() > 0) {
+		::main_instance.sell_vehicles.AddList(unprofitable_vehicles);
+        ::main_instance.SendVehicleToSellToDepot();
+	}
+
     return need_money;
 }
 

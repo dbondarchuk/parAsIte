@@ -110,7 +110,7 @@ function RouteFinder::FindRouteBetweenRects(tile_a, tile_b, radius, ignored_tile
 	if (goals.len() == 0) return null;
 
 	_RouteFinder_pf.InitializePath(sources, goals, ignored_tiles);
-	RouteFinder.max_cost <- 20 + (AIMap.DistanceManhattan(tile_a, tile_b) * 1.2).tointeger();
+	RouteFinder.max_cost <- 20 + (AIMap.DistanceManhattan(tile_a, tile_b) * 3).tointeger();
 	RouteFinder.goal_tile <- tile_b;
 	local path = _RouteFinder_pf.FindPath(-1);
 	AILog.Info("Found path:" + (path != null));

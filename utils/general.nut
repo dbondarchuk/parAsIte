@@ -43,6 +43,11 @@ class Utils_General
 	static function GetMoney(amount);
 
 	/**
+	 * Checks if can get a specified amount of money.
+	 */
+	static function GetMaxMoney();
+
+	/**
 	 * Check if all game settings are valid in the current openttd version.
 	 * @param array An array with the settings to check.
 	 * @return True if all settings are valid.
@@ -83,6 +88,15 @@ function Utils_General::GetMoney(amount)
 	} else {
 		AICompany.SetMinimumLoanAmount(min(maxloan, loan + amount - bank + 10000));
 	}
+}
+
+function Utils_General::GetMaxMoney()
+{
+	local bank = AICompany.GetBankBalance(AICompany.COMPANY_SELF);
+	local loan = AICompany.GetLoanAmount();
+	local maxloan = AICompany.GetMaxLoanAmount();
+
+	return max(bank, maxloan - loan + bank);
 }
 
 function Utils_General::CheckSettings(array)

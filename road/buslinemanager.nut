@@ -250,9 +250,9 @@ function BusLineManager::_NewLineExistingRoadGenerator(num_routes_to_check)
 			do_skip = false;
 			this._skip_to++;
 			local manager2 = ::main_instance._town_managers[town_to];
-			AILog.Info("  Checking second town " + AITown.GetName(town) + " for stops.");
+			AILog.Info("  Checking second town " + AITown.GetName(town_to) + " for stops.");
 			if (!manager2.CanGetStation()) {
-				AILog.Info("  No stops were found in second town of " + AITown.GetName(town));
+				AILog.Info("  No stops were found in second town of " + AITown.GetName(town_to));
 				continue;
 			}
 

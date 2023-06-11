@@ -53,6 +53,10 @@ require("rail/trainmanager.nut");
 require("rail/railroutebuilder.nut");
 require("rail/trainline.nut");
 
+require("water/ferry.nut");
+require("water/freight.nut");
+require("water/maintenance.nut");
+
 /**
  * The main class of ParAsIte.
  */
@@ -65,6 +69,8 @@ class ParAsIte extends AIController {
     _bus_manager = null; ///< The BusLineManager managing all bus lines.
     _aircraft_manager = null; ///< The AircraftManager managing all air routes.
     _train_manager = null; ///< The TrainManager managing all train routes.
+    _freight = null; ///< The Freight managing all freight ship routes.
+    _ferry = null; ///< The Ferry managing all ferry routes.
     _pending_events = null; ///< An array containing [EventType, value] pairs of unhandles events.
     _save_data = null; ///< Cache of save data during load.
     _save_version = null; ///< Cache of version the save data was saved with.
@@ -82,10 +88,11 @@ class ParAsIte extends AIController {
 
     constructor() {
         ::main_instance <- this;
+
         /* Introduce a constant for sorting AILists here, it may be in the api later.
          * This needs to be done here, before any instance of it is made. */
-        AIAbstractList.SORT_ASCENDING <- true;
-        AIAbstractList.SORT_DESCENDING <- false;
+        //AIAbstractList.SORT_ASCENDING <- true;
+        //AIAbstractList.SORT_DESCENDING <- false;
 
         this._save_data = null;
         this._save_version = null;
@@ -113,6 +120,10 @@ class ParAsIte extends AIController {
         this._bus_manager = BusLineManager();
         this._aircraft_manager = AircraftManager();
         this._train_manager = TrainManager();
+
+        local maintenance = Maintenance();
+        this._freight = Freight(maintenance);
+        this._ferry = Ferry(maintenance);
 
         this.last_vehicle_check = 0;
         this.last_cash_output = AIDate.GetCurrentDate();
@@ -478,6 +489,8 @@ function ParAsIte::DoMaintenance() {
         local ret2 = this._truck_manager.CheckRoutes();
         local ret3 = this._train_manager.CheckRoutes();
         local ret4 = this._aircraft_manager.CheckRoutes();
+        this._freight.maintenance.PerformIfNeeded();
+        this._ferry.maintenance.PerformIfNeeded();
         this.last_vehicle_check = AIDate.GetCurrentDate();
         this.need_vehicle_check = ret1 || ret2 || ret3 || ret4;
     }
@@ -600,6 +613,7 @@ function ParAsIte::Start() {
     this._bus_manager.AfterLoad();
     this._truck_manager.AfterLoad();
     this._aircraft_manager.AfterLoad();
+
     //this._train_manager.AfterLoad();
     this._save_data = null;
     AILog.Info("Loading done");
@@ -611,8 +625,22 @@ function ParAsIte::Start() {
 
 	ParAsIte.BuildHQ();
 
+    local iter = 0;
     while (1) {
         this.DoMaintenance();
+
+        /* To speed-up the path finding, we search for the more complicated paths rarely. */
+        if(iter % 11 == 5) {
+            this._freight.max_parts = 2;
+            this._ferry.max_parts = 2;
+        } else if(iter % 11 == 10) {
+            this._freight.max_parts = 3;
+            this._ferry.max_parts = 3;
+        } else {
+            this._freight.max_parts = 1;
+            this._ferry.max_parts = 1;
+        }
+
         // if (this.need_vehicle_check) {
         // 	AIController.Sleep(20);
         // 	continue;
@@ -626,8 +654,23 @@ function ParAsIte::Start() {
             local veh_list = AIVehicleList();
             veh_list.Valuate(AIVehicle.GetVehicleType);
             veh_list.KeepValue(AIVehicle.VT_AIR);
+            AILog.Info("MAIN:: Total planes found: " + veh_list.Count());
             if (this.UseVehicleType("planes") && AIGameSettings.GetValue("vehicle.max_aircraft") > veh_list.Count()) {
-                build_route = this._aircraft_manager.BuildNewRoute();
+                AILog.Info("MAIN:: Total planes found: " + veh_list.Count());
+                AILog.Info("MAIN:: AIR Trying to build a new route");
+                try {
+                    build_route = this._aircraft_manager.BuildNewRoute(false);
+                } catch(e) {
+                    AILog.Error("Failed to build aircraft: " + e);
+                }
+                if (!build_route) {
+                    AILog.Info("Failed to build plane route. Will try to build Helicopter route");
+                    try {
+                        build_route = this._aircraft_manager.BuildNewRoute(true);
+                    } catch(e) {
+                        AILog.Error("Failed to build helicopter: " + e);
+                    }
+                }
                 Utils_General.GetMoney(200000);
                 AILog.Info("Build air route: " + build_route);
             }
@@ -677,6 +720,12 @@ function ParAsIte::Start() {
             build_busses = !build_busses;
             if (build_route) build_road_route--;
         }
+
+        Utils_General.GetMoney(200000);
+        local new_freights = _freight.BuildIndustryFreightRoutes();
+        new_freights += _freight.BuildTownFreightRoutes();
+        local new_ferries = _ferry.BuildFerryRoutes();
+
         Utils_General.GetMoney(200000);
         if (AIController.GetSetting("plant_trees")) {
         	if (AICompany.GetLoanAmount() == 0 && AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 200000) {
@@ -688,7 +737,26 @@ function ParAsIte::Start() {
         		this._town_managers[town].PlantTrees();
         	}
         }
+        Utils_General.GetMoney(200000);
+        if (AIController.GetSetting("buy_companies")) {
+        	if (AICompany.GetLoanAmount() == 0 && AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 200000) {
+                for(local companyId = AICompany.COMPANY_FIRST; companyId <= AICompany.COMPANY_LAST; companyId++) {
+                    local resolvedId = AICompany.ResolveCompanyID(companyId);
+                    if (resolvedId == AICompany.COMPANY_INVALID || AICompany.IsMine(resolvedId) || !AICompany.IsAICompany(resolvedId)) continue;
+
+                    local name = AICompany.GetName(resolvedId);
+                    AILog.Info("Trying to buy shares in company " + name);
+
+                    local result = AICompany.BuyShareInCompany(resolvedId);
+                    AILog.Info("Bought shares in company " + name + ": " + result);
+
+                    if (result) break;
+                }
+        	}
+        }
         // Utils_General.GetMoney(200000);
-        AIController.Sleep(10);
+
+        iter++;
+        AIController.Sleep(20);
     }
 };
